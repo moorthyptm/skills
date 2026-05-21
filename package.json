@@ -9,6 +9,8 @@
     "validate": "node scripts/validate-skills.mjs"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
     "husky": "^9.1.7",
     "js-yaml": "^4.1.1"
   }
