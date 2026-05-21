@@ -15,7 +15,6 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "upgrade:safe": "node scripts/upgrade-safe.mjs",
     "audit:signatures": "npm audit signatures"
   },
   "devDependencies": {
