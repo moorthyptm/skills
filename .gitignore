@@ -1,0 +1,32 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node / tooling
+node_modules/
+.pnpm-store/
+.npm/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local agent state
+.claude/
+.cursor/
+.cline/
+
+# Logs / temp
+*.log
+tmp/
+.cache/
