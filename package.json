@@ -1,0 +1,14 @@
+{
+  "name": "moorthyptm-skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal Agent Skills, installable via the skills CLI.",
+  "scripts": {
+    "prepare": "husky",
+    "validate": "node scripts/validate-skills.mjs"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
