@@ -13,7 +13,9 @@ import { join, basename, relative, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const root = process.env.SKILLS_ROOT
+  ? resolve(process.env.SKILLS_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
 const warnings = [];
 const err = (m) => errors.push(m);
@@ -28,6 +30,9 @@ const KNOWN_FIELDS = new Set([
   'metadata',
   'allowed-tools',
 ]);
+const KNOWN_DIRS = new Set(['scripts', 'references', 'assets', 'evals']);
+const REF_DIRS = ['scripts', 'references', 'assets'];
+const SKIP_NAMES = new Set(['node_modules', 'dist', 'build', '__pycache__']);
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const NAME_MAX = 64;
 const DESC_MAX = 1024;
@@ -47,9 +52,14 @@ try {
 // --- 2. Walk skills/ for every SKILL.md ------------------------------------
 function findSkillMd(dir, out = []) {
   let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
+    if (SKIP_NAMES.has(e.name)) continue;
     const full = join(dir, e.name);
     if (e.isDirectory()) findSkillMd(full, out);
     else if (e.isFile() && e.name === 'SKILL.md') out.push(full);
@@ -87,7 +97,9 @@ for (const file of skillFiles) {
   // unknown fields
   for (const key of Object.keys(fm)) {
     if (!KNOWN_FIELDS.has(key)) {
-      warn(`${rel}: unknown frontmatter field "${key}" (spec defines: ${[...KNOWN_FIELDS].join(', ')})`);
+      warn(
+        `${rel}: unknown frontmatter field "${key}" (spec defines: ${[...KNOWN_FIELDS].join(', ')})`,
+      );
     }
   }
 
@@ -99,9 +111,12 @@ for (const file of skillFiles) {
   } else {
     const n = fm.name;
     if (n.length < 1) err(`${rel}: 'name' must be non-empty`);
-    else if (n.length > NAME_MAX) err(`${rel}: 'name' exceeds ${NAME_MAX} characters (${n.length})`);
+    else if (n.length > NAME_MAX)
+      err(`${rel}: 'name' exceeds ${NAME_MAX} characters (${n.length})`);
     if (!NAME_RE.test(n)) {
-      err(`${rel}: 'name' "${n}" must match [a-z0-9-] with no leading/trailing/consecutive hyphens`);
+      err(
+        `${rel}: 'name' "${n}" must match [a-z0-9-] with no leading/trailing/consecutive hyphens`,
+      );
     }
     const parent = basename(dirname(file));
     if (n !== parent) err(`${rel}: 'name' "${n}" does not match parent directory "${parent}"`);
@@ -132,7 +147,8 @@ for (const file of skillFiles) {
     } else {
       const c = fm.compatibility;
       if (c.length < 1) err(`${rel}: 'compatibility' must be non-empty if provided`);
-      if (c.length > COMPAT_MAX) err(`${rel}: 'compatibility' exceeds ${COMPAT_MAX} characters (${c.length})`);
+      if (c.length > COMPAT_MAX)
+        err(`${rel}: 'compatibility' exceeds ${COMPAT_MAX} characters (${c.length})`);
     }
   }
 
@@ -144,7 +160,9 @@ for (const file of skillFiles) {
     } else {
       for (const [k, v] of Object.entries(md)) {
         if (typeof v !== 'string') {
-          err(`${rel}: 'metadata.${k}' must be a string (got ${typeof v} — quote numeric values, e.g. version: "1.0")`);
+          err(
+            `${rel}: 'metadata.${k}' must be a string (got ${typeof v} — quote numeric values, e.g. version: "1.0")`,
+          );
         }
       }
     }
@@ -159,13 +177,64 @@ for (const file of skillFiles) {
   const lines = body.split(/\r?\n/).length;
   const approxTokens = Math.ceil(body.length / 4);
   if (lines > BODY_LINE_SOFT_CAP) {
-    warn(`${rel}: body is ${lines} lines (>${BODY_LINE_SOFT_CAP} recommended — split into references/)`);
+    warn(
+      `${rel}: body is ${lines} lines (>${BODY_LINE_SOFT_CAP} recommended — split into references/)`,
+    );
   }
   if (approxTokens > BODY_TOKEN_SOFT_CAP) {
-    warn(`${rel}: body is ~${approxTokens} tokens (>${BODY_TOKEN_SOFT_CAP} recommended — split into references/)`);
+    warn(
+      `${rel}: body is ~${approxTokens} tokens (>${BODY_TOKEN_SOFT_CAP} recommended — split into references/)`,
+    );
   }
   if (body.trim().length === 0) {
     warn(`${rel}: body is empty (skill has frontmatter but no instructions)`);
+  }
+
+  // -- supporting directories --
+  const skillDir = dirname(file);
+  let siblings = [];
+  try {
+    siblings = readdirSync(skillDir, { withFileTypes: true });
+  } catch {}
+  for (const s of siblings) {
+    if (!s.isDirectory() || s.name.startsWith('.')) continue;
+    if (!KNOWN_DIRS.has(s.name)) {
+      warn(
+        `${rel}: unknown sibling directory "${s.name}/" (spec defines: scripts/, references/, assets/; evals/ is convention)`,
+      );
+    }
+  }
+
+  // -- references inside SKILL.md body --
+  // Spec-recommended form is markdown links: [text](scripts/foo.sh).
+  // Inline backticks like `references/api-errors.md` are too often used for
+  // prose examples, so we deliberately do not flag them.
+  const refRe = new RegExp('\\[[^\\]]*\\]\\(((?:' + REF_DIRS.join('|') + ')\\/[^)\\s]+)\\)', 'g');
+  const seen = new Set();
+  let match;
+  while ((match = refRe.exec(body)) !== null) {
+    const ref = match[1];
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    const refPath = join(skillDir, ref);
+    let exists = false;
+    try {
+      statSync(refPath);
+      exists = true;
+    } catch {}
+    if (!exists) {
+      warn(`${rel}: markdown link references ${ref} but it does not exist in the skill directory`);
+      continue;
+    }
+    // depth check — spec says one level deep
+    if (ref.startsWith('references/')) {
+      const inside = ref.slice('references/'.length);
+      if (inside.includes('/')) {
+        warn(
+          `${rel}: reference ${ref} is more than one level deep (best-practices: keep references flat)`,
+        );
+      }
+    }
   }
 }
 
@@ -182,13 +251,18 @@ if (plugin) {
         continue;
       }
       const skillMd = resolve(root, p, 'SKILL.md');
-      try { statSync(skillMd); }
-      catch { err(`plugin.json: declared skill "${p}" has no SKILL.md`); }
+      try {
+        statSync(skillMd);
+      } catch {
+        err(`plugin.json: declared skill "${p}" has no SKILL.md`);
+      }
     }
     const declared = new Set(plugin.skills.map((p) => resolve(root, p)));
     for (const f of skillFiles) {
       if (!declared.has(dirname(f))) {
-        warn(`${relative(root, dirname(f))}: skill exists on disk but is not listed in plugin.json (won't be published)`);
+        warn(
+          `${relative(root, dirname(f))}: skill exists on disk but is not listed in plugin.json (add it for deterministic publishing — without it the CLI may still pick it up via its recursive fallback)`,
+        );
       }
     }
   }
