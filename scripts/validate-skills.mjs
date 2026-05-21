@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 /**
- * Zero-dependency validator for this skills repo.
- * Checks .claude-plugin/plugin.json and every skills/.../SKILL.md against
- * the rules from https://agentskills.io/specification.
+ * Validator for this skills repo, enforcing the Agent Skills specification
+ * at https://agentskills.io/specification and surfacing warnings from
+ * https://agentskills.io/skill-creation/best-practices.
+ *
+ * Validates:
+ *   .claude-plugin/plugin.json  — JSON syntax, schema, declared paths exist
+ *   skills/<cat>/<name>/SKILL.md — frontmatter against full spec
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, basename, relative, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
@@ -14,7 +19,23 @@ const warnings = [];
 const err = (m) => errors.push(m);
 const warn = (m) => warnings.push(m);
 
-// --- 1. plugin.json ---------------------------------------------------------
+// --- spec constants --------------------------------------------------------
+const KNOWN_FIELDS = new Set([
+  'name',
+  'description',
+  'license',
+  'compatibility',
+  'metadata',
+  'allowed-tools',
+]);
+const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const NAME_MAX = 64;
+const DESC_MAX = 1024;
+const COMPAT_MAX = 500;
+const BODY_LINE_SOFT_CAP = 500;
+const BODY_TOKEN_SOFT_CAP = 5000;
+
+// --- 1. .claude-plugin/plugin.json -----------------------------------------
 const pluginPath = join(root, '.claude-plugin/plugin.json');
 let plugin = null;
 try {
@@ -23,7 +44,7 @@ try {
   err(`.claude-plugin/plugin.json: invalid JSON — ${e.message}`);
 }
 
-// --- 2. walk skills/ for SKILL.md ------------------------------------------
+// --- 2. Walk skills/ for every SKILL.md ------------------------------------
 function findSkillMd(dir, out = []) {
   let entries;
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
@@ -37,50 +58,121 @@ function findSkillMd(dir, out = []) {
 }
 
 const skillFiles = findSkillMd(join(root, 'skills'));
-const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+// --- 3. validate every SKILL.md against the spec ---------------------------
 for (const file of skillFiles) {
   const rel = relative(root, file);
-  const content = readFileSync(file, 'utf8');
-  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const raw = readFileSync(file, 'utf8');
+
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!m) {
     err(`${rel}: missing YAML frontmatter delimited by '---'`);
     continue;
   }
 
-  const fm = {};
-  for (const raw of m[1].split(/\r?\n/)) {
-    const line = raw.replace(/\s+#.*$/, '');
-    const kv = line.match(/^([a-zA-Z][a-zA-Z0-9_-]*):\s*(.*)$/);
-    if (kv) fm[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, '');
+  let fm;
+  try {
+    fm = yaml.load(m[1]);
+  } catch (e) {
+    err(`${rel}: frontmatter is not valid YAML — ${e.message}`);
+    continue;
+  }
+  if (fm === null || typeof fm !== 'object' || Array.isArray(fm)) {
+    err(`${rel}: frontmatter must be a YAML mapping`);
+    continue;
   }
 
-  if (!fm.name) err(`${rel}: missing required field 'name'`);
-  if (!fm.description) err(`${rel}: missing required field 'description'`);
+  const body = m[2] || '';
 
-  if (fm.name) {
-    if (fm.name.length > 64) err(`${rel}: name "${fm.name}" exceeds 64 characters`);
-    if (!NAME_RE.test(fm.name)) {
-      err(`${rel}: name "${fm.name}" must match [a-z0-9-] with no leading/trailing/consecutive hyphens`);
+  // unknown fields
+  for (const key of Object.keys(fm)) {
+    if (!KNOWN_FIELDS.has(key)) {
+      warn(`${rel}: unknown frontmatter field "${key}" (spec defines: ${[...KNOWN_FIELDS].join(', ')})`);
+    }
+  }
+
+  // -- name (required) --
+  if (!('name' in fm)) {
+    err(`${rel}: missing required field 'name'`);
+  } else if (typeof fm.name !== 'string') {
+    err(`${rel}: 'name' must be a string (got ${typeof fm.name})`);
+  } else {
+    const n = fm.name;
+    if (n.length < 1) err(`${rel}: 'name' must be non-empty`);
+    else if (n.length > NAME_MAX) err(`${rel}: 'name' exceeds ${NAME_MAX} characters (${n.length})`);
+    if (!NAME_RE.test(n)) {
+      err(`${rel}: 'name' "${n}" must match [a-z0-9-] with no leading/trailing/consecutive hyphens`);
     }
     const parent = basename(dirname(file));
-    if (fm.name !== parent) {
-      err(`${rel}: name "${fm.name}" does not match parent directory "${parent}"`);
+    if (n !== parent) err(`${rel}: 'name' "${n}" does not match parent directory "${parent}"`);
+  }
+
+  // -- description (required) --
+  if (!('description' in fm)) {
+    err(`${rel}: missing required field 'description'`);
+  } else if (typeof fm.description !== 'string') {
+    err(`${rel}: 'description' must be a string (got ${typeof fm.description})`);
+  } else {
+    const d = fm.description.trim();
+    if (d.length < 1) err(`${rel}: 'description' must be non-empty`);
+    if (fm.description.length > DESC_MAX) {
+      err(`${rel}: 'description' exceeds ${DESC_MAX} characters (${fm.description.length})`);
     }
   }
 
-  if (fm.description && fm.description.length > 1024) {
-    err(`${rel}: description exceeds 1024 characters (${fm.description.length})`);
+  // -- license (optional) --
+  if ('license' in fm && typeof fm.license !== 'string') {
+    err(`${rel}: 'license' must be a string`);
   }
-  if (fm.compatibility && fm.compatibility.length > 500) {
-    err(`${rel}: compatibility exceeds 500 characters`);
+
+  // -- compatibility (optional) --
+  if ('compatibility' in fm) {
+    if (typeof fm.compatibility !== 'string') {
+      err(`${rel}: 'compatibility' must be a string`);
+    } else {
+      const c = fm.compatibility;
+      if (c.length < 1) err(`${rel}: 'compatibility' must be non-empty if provided`);
+      if (c.length > COMPAT_MAX) err(`${rel}: 'compatibility' exceeds ${COMPAT_MAX} characters (${c.length})`);
+    }
+  }
+
+  // -- metadata (optional) — map of string→string --
+  if ('metadata' in fm) {
+    const md = fm.metadata;
+    if (md === null || typeof md !== 'object' || Array.isArray(md)) {
+      err(`${rel}: 'metadata' must be a mapping of string keys to string values`);
+    } else {
+      for (const [k, v] of Object.entries(md)) {
+        if (typeof v !== 'string') {
+          err(`${rel}: 'metadata.${k}' must be a string (got ${typeof v} — quote numeric values, e.g. version: "1.0")`);
+        }
+      }
+    }
+  }
+
+  // -- allowed-tools (optional, experimental) --
+  if ('allowed-tools' in fm && typeof fm['allowed-tools'] !== 'string') {
+    err(`${rel}: 'allowed-tools' must be a space-separated string`);
+  }
+
+  // -- body length (best-practices soft caps) --
+  const lines = body.split(/\r?\n/).length;
+  const approxTokens = Math.ceil(body.length / 4);
+  if (lines > BODY_LINE_SOFT_CAP) {
+    warn(`${rel}: body is ${lines} lines (>${BODY_LINE_SOFT_CAP} recommended — split into references/)`);
+  }
+  if (approxTokens > BODY_TOKEN_SOFT_CAP) {
+    warn(`${rel}: body is ~${approxTokens} tokens (>${BODY_TOKEN_SOFT_CAP} recommended — split into references/)`);
+  }
+  if (body.trim().length === 0) {
+    warn(`${rel}: body is empty (skill has frontmatter but no instructions)`);
   }
 }
 
-// --- 3. plugin.json declared paths must exist -------------------------------
+// --- 4. plugin.json schema + declared paths --------------------------------
 if (plugin) {
   if (typeof plugin.name !== 'string') err(`plugin.json: missing string field 'name'`);
-  if (plugin.skills !== undefined && !Array.isArray(plugin.skills)) {
+  if ('skills' in plugin && !Array.isArray(plugin.skills)) {
     err(`plugin.json: 'skills' must be an array`);
   }
   if (Array.isArray(plugin.skills)) {
@@ -95,15 +187,14 @@ if (plugin) {
     }
     const declared = new Set(plugin.skills.map((p) => resolve(root, p)));
     for (const f of skillFiles) {
-      const d = dirname(f);
-      if (!declared.has(d)) {
-        warn(`${relative(root, d)}: skill exists on disk but is not listed in plugin.json (won't be published)`);
+      if (!declared.has(dirname(f))) {
+        warn(`${relative(root, dirname(f))}: skill exists on disk but is not listed in plugin.json (won't be published)`);
       }
     }
   }
 }
 
-// --- output -----------------------------------------------------------------
+// --- output ----------------------------------------------------------------
 for (const w of warnings) console.warn(`⚠  ${w}`);
 if (errors.length) {
   console.error('Skill validation failed:');

@@ -9,6 +9,7 @@
     "validate": "node scripts/validate-skills.mjs"
   },
   "devDependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "js-yaml": "^4.1.1"
   }
 }
