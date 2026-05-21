@@ -1,1 +1,3 @@
 npm run --silent validate
+npm run --silent lint
+npm run --silent format:check

@@ -6,12 +6,21 @@
   "description": "Personal Agent Skills, installable via the skills CLI.",
   "scripts": {
     "prepare": "husky",
-    "validate": "node scripts/validate-skills.mjs"
+    "validate": "node scripts/validate-skills.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
     "@commitlint/config-conventional": "^21.0.1",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
     "husky": "^9.1.7",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "prettier": "^3.8.3"
   }
 }
