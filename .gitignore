@@ -30,3 +30,26 @@ venv/
 *.log
 tmp/
 .cache/
+
+# Secrets — never commit. Skills are public once published.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+credentials.json
+secrets.json
+secrets.yaml
+secrets.yml
+.aws/
+.netrc
+.gnupg/
+.ssh/
+*.token

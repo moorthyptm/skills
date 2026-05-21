@@ -204,8 +204,11 @@ Every correction the user makes goes into Gotchas.
 
 Before publishing, check the semantic items the validator cannot catch:
 time-sensitive content (specific dates, version numbers that will age),
-drifting terminology, missing concrete examples, and whether an agent could
-complete the task from this file alone.
+drifting terminology, missing concrete examples, whether an agent could
+complete the task from this file alone, and — most importantly — that no
+credentials, secrets, tokens, internal hostnames, customer data, or
+personal information are present in the SKILL.md, scripts, references, or
+assets. Once published, the skill is public.
 
 Deeper evaluation: <https://agentskills.io/skill-creation/evaluating-skills>
 
@@ -231,6 +234,11 @@ Once the user approves:
 
 ## Gotchas — authoring in this repo
 
+- **Never include secrets or personal information.** Published skills are
+  public. No credentials, API keys, tokens, internal hostnames, customer
+  data, real teammate names without consent, or personal email addresses
+  in any file under the skill directory. When an example needs a value,
+  use a placeholder like `<your-api-key>` or `TODO: set token`.
 - **Name must equal the parent directory.** `skills/productivity/foo/SKILL.md`
   requires `name: foo`.
 - **Quote numeric metadata values.** Write `version: "1.0"`, not `version: 1.0`
