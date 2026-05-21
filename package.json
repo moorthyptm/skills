@@ -6,7 +6,7 @@
   "description": "Personal Agent Skills, installable via the skills CLI.",
   "engines": {
     "node": ">=20",
-    "npm": ">=10"
+    "npm": ">=11.10"
   },
   "scripts": {
     "prepare": "husky",
