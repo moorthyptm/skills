@@ -4,13 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Personal Agent Skills, installable via the skills CLI.",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
   "scripts": {
     "prepare": "husky",
     "validate": "node scripts/validate-skills.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "upgrade:safe": "node scripts/upgrade-safe.mjs",
+    "audit:signatures": "npm audit signatures"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
