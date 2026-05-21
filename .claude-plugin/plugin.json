@@ -1,4 +1,4 @@
 {
   "name": "moorthyptm-skills",
-  "skills": []
+  "skills": ["./skills/productivity/create-skill"]
 }
