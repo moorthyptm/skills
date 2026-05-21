@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Personal Agent Skills, installable via the skills CLI.",
   "engines": {
-    "node": ">=20",
+    "node": ">=24",
     "npm": ">=11.10"
   },
   "scripts": {
