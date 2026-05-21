@@ -1,4 +1,4 @@
 {
   "name": "moorthyptm-skills",
-  "skills": ["./skills/productivity/create-skill"]
+  "skills": ["./skills/engineering/angular-standards", "./skills/productivity/create-skill"]
 }
